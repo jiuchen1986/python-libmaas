@@ -1,25 +1,15 @@
 """Test for `maas.client.viscera.events`."""
 
 from datetime import datetime
-from itertools import (
-    chain,
-    count,
-)
+from itertools import chain, count
 import random
 from unittest.mock import sentinel
 
-from testtools.matchers import (
-    Equals,
-    IsInstance,
-)
+from testtools.matchers import Equals, IsInstance
 
+from ..users import User
 from .. import events
-from ...testing import (
-    make_mac_address,
-    make_name_without_spaces,
-    make_range,
-    TestCase,
-)
+from ...testing import make_mac_address, make_name_without_spaces, make_range, TestCase
 from ..testing import bind
 
 
@@ -35,6 +25,7 @@ def make_Event_dict():
         "level": random.choice(list(events.Level)),
         "created": datetime.utcnow().strftime("%a, %d %b. %Y %H:%M:%S"),
         "description": make_name_without_spaces("description"),
+        "username": make_name_without_spaces("username"),
     }
 
 
@@ -50,10 +41,7 @@ def make_origin():
 
 def make_queried_events():
     """Mimic the object returned from a query."""
-    return {
-        "events": [], "prev_uri": sentinel.prev_uri,
-        "next_uri": sentinel.next_uri,
-    }
+    return {"events": [], "prev_uri": sentinel.prev_uri, "next_uri": sentinel.next_uri}
 
 
 class TestEventsQuery(TestCase):
@@ -64,7 +52,7 @@ class TestEventsQuery(TestCase):
         obj.query()
         obj._handler.query.assert_called_once_with()
 
-    def test__query_arguments_are_assembled_and_passed_to_bones_handler(self):
+    def test__query_arguments_are_assembled_and_passed_to_bones_handler1(self):
         obj = make_origin().Events
         arguments = {
             "hostnames": (
@@ -79,10 +67,7 @@ class TestEventsQuery(TestCase):
                 make_name_without_spaces("zone"),
                 make_name_without_spaces("zone"),
             ),
-            "macs": (
-                make_mac_address(),
-                make_mac_address(),
-            ),
+            "macs": (make_mac_address(), make_mac_address()),
             "system_ids": (
                 make_name_without_spaces("system-id"),
                 make_name_without_spaces("system-id"),
@@ -90,6 +75,7 @@ class TestEventsQuery(TestCase):
             "agent_name": make_name_without_spaces("agent"),
             "level": random.choice(list(events.Level)),
             "limit": random.randrange(1, 1000),
+            "owner": make_name_without_spaces("username"),
         }
         obj.query(**arguments)
         expected = {
@@ -101,8 +87,82 @@ class TestEventsQuery(TestCase):
             "agent_name": [arguments["agent_name"]],
             "level": [arguments["level"].name],
             "limit": [str(arguments["limit"])],
+            "owner": [arguments["owner"]],
         }
         obj._handler.query.assert_called_once_with(**expected)
+
+    def test__query_arguments_are_assembled_and_passed_to_bones_handler2(self):
+        obj = make_origin().Events
+        user = User(
+            {
+                "username": make_name_without_spaces("username"),
+                "email": make_name_without_spaces("user@"),
+                "is_superuser": False,
+            }
+        )
+        arguments = {
+            "hostnames": (
+                make_name_without_spaces("hostname"),
+                make_name_without_spaces("hostname"),
+            ),
+            "domains": (
+                make_name_without_spaces("domain"),
+                make_name_without_spaces("domain"),
+            ),
+            "zones": (
+                make_name_without_spaces("zone"),
+                make_name_without_spaces("zone"),
+            ),
+            "macs": (make_mac_address(), make_mac_address()),
+            "system_ids": (
+                make_name_without_spaces("system-id"),
+                make_name_without_spaces("system-id"),
+            ),
+            "agent_name": make_name_without_spaces("agent"),
+            "level": random.choice(list(events.Level)),
+            "limit": random.randrange(1, 1000),
+            "owner": user,
+        }
+        obj.query(**arguments)
+        expected = {
+            "hostname": list(arguments["hostnames"]),
+            "domain": list(arguments["domains"]),
+            "zone": list(arguments["zones"]),
+            "mac_address": list(arguments["macs"]),
+            "id": list(arguments["system_ids"]),
+            "agent_name": [arguments["agent_name"]],
+            "level": [arguments["level"].name],
+            "limit": [str(arguments["limit"])],
+            "owner": [user.username],
+        }
+        obj._handler.query.assert_called_once_with(**expected)
+
+    def test__query_arguments_raises_error_for_invalid_owner(self):
+        obj = make_origin().Events
+        arguments = {
+            "hostnames": (
+                make_name_without_spaces("hostname"),
+                make_name_without_spaces("hostname"),
+            ),
+            "domains": (
+                make_name_without_spaces("domain"),
+                make_name_without_spaces("domain"),
+            ),
+            "zones": (
+                make_name_without_spaces("zone"),
+                make_name_without_spaces("zone"),
+            ),
+            "macs": (make_mac_address(), make_mac_address()),
+            "system_ids": (
+                make_name_without_spaces("system-id"),
+                make_name_without_spaces("system-id"),
+            ),
+            "agent_name": make_name_without_spaces("agent"),
+            "level": random.choice(list(events.Level)),
+            "limit": random.randrange(1, 1000),
+            "owner": random.randint(0, 10),
+        }
+        self.assertRaises(TypeError, obj.query, **arguments)
 
     def test__query_level_is_normalised(self):
         obj = make_origin().Events
@@ -133,26 +193,30 @@ class TestEvents(TestCase):
 
     def test__prev_requests_page_of_older_events(self):
         obj = make_origin().Events
-        evts = obj({
-            "events": [],
-            "prev_uri": "endpoint?before=100&limit=20&foo=abc",
-            "next_uri": "endpoint?after=119&limit=20&foo=123",
-        })
+        evts = obj(
+            {
+                "events": [],
+                "prev_uri": "endpoint?before=100&limit=20&foo=abc",
+                "next_uri": "endpoint?after=119&limit=20&foo=123",
+            }
+        )
         self.assertThat(evts.prev(), IsInstance(events.Events))
         evts._handler.query.assert_called_once_with(
-            before=["100"], limit=["20"], foo=["abc"],
+            before=["100"], limit=["20"], foo=["abc"]
         )
 
     def test__next_requests_page_of_newer_events(self):
         obj = make_origin().Events
-        evts = obj({
-            "events": [],
-            "prev_uri": "endpoint?before=100&limit=20&foo=abc",
-            "next_uri": "endpoint?after=119&limit=20&foo=123",
-        })
+        evts = obj(
+            {
+                "events": [],
+                "prev_uri": "endpoint?before=100&limit=20&foo=abc",
+                "next_uri": "endpoint?after=119&limit=20&foo=123",
+            }
+        )
         self.assertThat(evts.next(), IsInstance(events.Events))
         evts._handler.query.assert_called_once_with(
-            after=["119"], limit=["20"], foo=["123"],
+            after=["119"], limit=["20"], foo=["123"]
         )
 
     def test__forwards_returns_a_continuous_iterator(self):
@@ -178,8 +242,10 @@ class TestEvents(TestCase):
         obj._handler.query.side_effect = pages
         self.assertThat(
             [evt._data for evt in obj.query().forwards()],
-            Equals(list(chain.from_iterable(
-                reversed(page["events"]) for page in pages))))
+            Equals(
+                list(chain.from_iterable(reversed(page["events"]) for page in pages))
+            ),
+        )
         # The query parameters in next_uri get passed through to bones.
         obj._handler.query.assert_called_with(going=["forwards"])
 
@@ -206,7 +272,7 @@ class TestEvents(TestCase):
         obj._handler.query.side_effect = pages
         self.assertThat(
             [evt._data for evt in obj.query().backwards()],
-            Equals(list(chain.from_iterable(
-                page["events"] for page in pages))))
+            Equals(list(chain.from_iterable(page["events"] for page in pages))),
+        )
         # The query parameters in prev_uri get passed through to bones.
         obj._handler.query.assert_called_with(going=["backwards"])

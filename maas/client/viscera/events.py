@@ -1,28 +1,19 @@
 """Objects for events."""
 
-__all__ = [
-    "Events",
-]
+__all__ = ["Events"]
 
 from datetime import datetime
 import enum
 from functools import partial
 import logging
 import typing
-from urllib.parse import (
-    parse_qs,
-    urlparse,
-)
+from urllib.parse import parse_qs, urlparse
+from .users import User
 
 import pytz
 
-from . import (
-    Object,
-    ObjectField,
-    ObjectSet,
-    ObjectType,
-)
-from ..utils.async import is_loop_running
+from . import Object, ObjectField, ObjectSet, ObjectType
+from ..utils.maas_async import is_loop_running
 
 #
 # The query API call returns:
@@ -43,7 +34,8 @@ from ..utils.async import is_loop_running
 #         level=event.type.level_str,
 #         created=event.created.strftime('%a, %d %b. %Y %H:%M:%S'),
 #         type=event.type.description,
-#         description=event.description
+#         description=event.description,
+#         username=event.user.username
 #     )
 #
 # Notes:
@@ -57,6 +49,7 @@ class Level(enum.IntEnum):
     They happen to correspond to levels in the `logging` module.
     """
 
+    AUDIT = 0
     DEBUG = logging.DEBUG
     INFO = logging.INFO
     WARNING = logging.WARNING
@@ -83,17 +76,20 @@ class EventsType(ObjectType):
     Level = Level
 
     async def query(
-            cls, *,
-            hostnames: typing.Iterable[str]=None,
-            domains: typing.Iterable[str]=None,
-            zones: typing.Iterable[str]=None,
-            macs: typing.Iterable[str]=None,
-            system_ids: typing.Iterable[str]=None,
-            agent_name: str=None,
-            level: typing.Union[Level, int, str]=None,
-            before: int=None,
-            after: int=None,
-            limit: int=None):
+        cls,
+        *,
+        hostnames: typing.Iterable[str] = None,
+        domains: typing.Iterable[str] = None,
+        zones: typing.Iterable[str] = None,
+        macs: typing.Iterable[str] = None,
+        system_ids: typing.Iterable[str] = None,
+        agent_name: str = None,
+        level: typing.Union[Level, int, str] = None,
+        before: int = None,
+        after: int = None,
+        limit: int = None,
+        owner: typing.Union[User, str] = None
+    ):
         """Query MAAS for matching events."""
 
         if before is not None and after is not None:
@@ -122,6 +118,15 @@ class EventsType(ObjectType):
             params["after"] = ["{:d}".format(after)]
         if limit is not None:
             params["limit"] = ["{:d}".format(limit)]
+        if owner is not None:
+            if isinstance(owner, User):
+                params["owner"] = [owner.username]
+            elif isinstance(owner, str):
+                params["owner"] = [owner]
+            else:
+                raise TypeError(
+                    "owner must be either User or str, not %s" % (type(owner).__name__)
+                )
 
         data = await cls._handler.query(**params)
         return cls(data)
@@ -192,8 +197,8 @@ class Events(ObjectSet, metaclass=EventsType):
             yield from current
             if is_loop_running():
                 raise RuntimeError(
-                    "Cannot iterate synchronously while "
-                    "event-loop is running.")
+                    "Cannot iterate synchronously while " "event-loop is running."
+                )
             current = current.prev()
 
     def forwards(self):
@@ -214,13 +219,12 @@ class Events(ObjectSet, metaclass=EventsType):
             yield from reversed(current)
             if is_loop_running():
                 raise RuntimeError(
-                    "Cannot iterate synchronously while "
-                    "event-loop is running.")
+                    "Cannot iterate synchronously while " "event-loop is running."
+                )
             current = current.next()
 
 
 class EventsAsyncIteratorBackwards:
-
     def __init__(self, current):
         super(EventsAsyncIteratorBackwards, self).__init__()
         self._current_iter = iter(current)
@@ -242,7 +246,6 @@ class EventsAsyncIteratorBackwards:
 
 
 class EventsAsyncIteratorForwards:
-
     def __init__(self, current):
         super(EventsAsyncIteratorForwards, self).__init__()
         self._current_iter = reversed(current)
@@ -271,7 +274,7 @@ def truncate(length, text):  # TODO: Move into utils.
     Otherwise return the given text unaltered.
     """
     if len(text) > length:
-        return text[:length - 1] + "…"
+        return text[: length - 1] + "…"
     else:
         return text
 
@@ -279,25 +282,21 @@ def truncate(length, text):  # TODO: Move into utils.
 class Event(Object):
     """An event."""
 
-    event_id = ObjectField(
-        "id", readonly=True)
-    event_type = ObjectField(
-        "type", readonly=True)
+    event_id = ObjectField("id", readonly=True)
+    event_type = ObjectField("type", readonly=True)
 
-    system_id = ObjectField(
-        "node", readonly=True)
-    hostname = ObjectField(
-        "hostname", readonly=True)
+    system_id = ObjectField("node", readonly=True)
+    hostname = ObjectField("hostname", readonly=True)
 
-    level = ObjectField.Checked(
-        "level", Level.normalise, readonly=True)
-    created = ObjectField.Checked(
-        "created", parse_created_timestamp, readonly=True)
+    level = ObjectField.Checked("level", Level.normalise, readonly=True)
+    created = ObjectField.Checked("created", parse_created_timestamp, readonly=True)
 
-    description = ObjectField(
-        "description", readonly=True)
+    description = ObjectField("description", readonly=True)
     description_short = ObjectField.Checked(
-        "description", partial(truncate, 50), readonly=True)
+        "description", partial(truncate, 50), readonly=True
+    )
+
+    username = ObjectField("username", readonly=True)
 
     def __repr__(self):
         return (

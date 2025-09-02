@@ -4,10 +4,7 @@ import random
 
 from .. import sshkeys
 
-from ...testing import (
-    make_string_without_spaces,
-    TestCase,
-)
+from ...testing import make_string_without_spaces, TestCase
 
 from ..testing import bind
 
@@ -19,23 +16,16 @@ def make_origin():
 
 
 class TestSSHKeys(TestCase):
-
     def test__sshkeys_create(self):
-        """ SSHKeys.create() returns a new SSHKey. """
+        """SSHKeys.create() returns a new SSHKey."""
         SSHKeys = make_origin().SSHKeys
         key = make_string_without_spaces()
-        SSHKeys._handler.create.return_value = {
-            "id": 1,
-            "key": key,
-            "keysource": "",
-        }
+        SSHKeys._handler.create.return_value = {"id": 1, "key": key, "keysource": ""}
         SSHKeys.create(key=key)
-        SSHKeys._handler.create.assert_called_once_with(
-            key=key
-        )
+        SSHKeys._handler.create.assert_called_once_with(key=key)
 
     def test__sshkeys_read(self):
-        """ SSHKeys.read() returns a list of SSH keys. """
+        """SSHKeys.read() returns a list of SSH keys."""
         SSHKeys = make_origin().SSHKeys
         keys = [
             {
@@ -51,15 +41,20 @@ class TestSSHKeys(TestCase):
 
 
 class TestSSHKey(TestCase):
-
     def test__sshkey_read(self):
-        """ SSHKeys.read() returns a single SSH key. """
+        """SSHKeys.read() returns a single SSH key."""
         SSHKey = make_origin().SSHKey
         key_id = random.randint(0, 100)
-        key_dict = {
-            "id": key_id,
-            "key": make_string_without_spaces(),
-            "keysource": "",
-        }
+        key_dict = {"id": key_id, "key": make_string_without_spaces(), "keysource": ""}
         SSHKey._handler.read.return_value = key_dict
         self.assertThat(SSHKey.read(id=key_id), Equals(SSHKey(key_dict)))
+
+    def test__sshkey_delete(self):
+        """SSHKeys.read() returns a single SSH key."""
+        SSHKey = make_origin().SSHKey
+        key_id = random.randint(0, 100)
+        ssh_key = SSHKey(
+            {"id": key_id, "key": make_string_without_spaces(), "keysource": ""}
+        )
+        ssh_key.delete()
+        SSHKey._handler.delete.assert_called_once_with(id=key_id)

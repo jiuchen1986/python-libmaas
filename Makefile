@@ -1,4 +1,10 @@
-PYTHON := python3.5
+python := python3
+snapcraft := SNAPCRAFT_BUILD_INFO=1 /snap/bin/snapcraft
+
+# ---
+
+install-dependencies:
+	if [ -x /usr/bin/snap ]; then sudo snap install --classic snapcraft; fi
 
 # ---
 
@@ -8,14 +14,18 @@ develop: bin/python setup.py
 dist: bin/python setup.py README
 	bin/python setup.py sdist bdist_wheel
 
-upload: bin/python setup.py README
-	bin/python setup.py sdist bdist_wheel upload
+upload: bin/python bin/twine setup.py README
+	bin/python setup.py sdist bdist_wheel
+	bin/twine upload dist/*
 
 test: bin/tox
 	@bin/tox
 
 integrate: bin/tox
 	@bin/tox -e integrate
+
+format: bin/tox
+	@bin/tox -e format,imports
 
 lint: bin/tox
 	@bin/tox -e lint,imports
@@ -29,6 +39,14 @@ clean:
 	find . -name '*~' -print0 | xargs -r0 $(RM)
 	$(RM) -r .eggs .tox .coverage TAGS tags
 	$(RM) pip-selfcheck.json
+
+# ---
+
+snap-clean:
+	$(snapcraft) clean
+
+snap:
+	$(snapcraft)
 
 # ---
 
@@ -47,10 +65,13 @@ bin/tox: bin/pip
 	bin/pip install --quiet --ignore-installed tox
 
 bin/python bin/pip:
-	virtualenv --python=$(PYTHON) --quiet $(CURDIR)
+	virtualenv --python=$(python) --quiet $(CURDIR)
 
 bin/mkdocs: bin/pip
 	bin/pip install --quiet --ignore-installed "mkdocs >= 0.14.0"
+
+bin/twine: bin/pip
+	bin/pip install --quiet --ignore-installed twine
 
 # ---
 
@@ -67,4 +88,4 @@ pretty: $(api-json)
 
 # ---
 
-.PHONY: develop dist docs docs-to-github test integrate lint clean pretty
+.PHONY: install-dependencies develop dist docs docs-to-github test integrate lint clean pretty snap snap-clean

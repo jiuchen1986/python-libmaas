@@ -99,19 +99,37 @@ class Client:
     @facade
     def devices(origin):
         return {
+            "create": origin.Devices.create,
             "get": origin.Device.read,
             "list": origin.Devices.read,
         }
 
     @facade
-    def events(origin):
-        namespace = {
-            "query": origin.Events.query,
+    def dnsresources(origin):
+        return {
+            "get": origin.DNSResource.read,
+            "list": origin.DNSResources.read,
         }
-        namespace.update({
-            level.name: level
-            for level in origin.Events.Level
-        })
+
+    @facade
+    def dnsresourcerecords(origin):
+        return {
+            "get": origin.DNSResourceRecord.read,
+            "list": origin.DNSResourceRecords.read,
+        }
+
+    @facade
+    def domains(origin):
+        return {
+            "create": origin.Domains.create,
+            "get": origin.Domain.read,
+            "list": origin.Domains.read,
+        }
+
+    @facade
+    def events(origin):
+        namespace = {"query": origin.Events.query}
+        namespace.update({level.name: level for level in origin.Events.Level})
         return namespace
 
     @facade
@@ -121,6 +139,14 @@ class Client:
             "get": origin.Fabric.read,
             "get_default": origin.Fabric.get_default,
             "list": origin.Fabrics.read,
+        }
+
+    @facade
+    def pods(origin):
+        return {
+            "create": origin.Pods.create,
+            "list": origin.Pods.read,
+            "get": origin.Pod.read,
         }
 
     @facade
@@ -150,9 +176,7 @@ class Client:
 
     @facade
     def files(origin):
-        return {
-            "list": origin.Files.read,
-        }
+        return {"list": origin.Files.read}
 
     @facade
     def ip_ranges(origin):
@@ -163,6 +187,12 @@ class Client:
         }
 
     @facade
+    def ip_addresses(origin):
+        return {
+            "list": origin.IPAddresses.read,
+        }
+
+    @facade
     def maas(origin):
         attrs = (
             (name, getattr(origin.MAAS, name))
@@ -170,9 +200,9 @@ class Client:
             if not name.startswith("_")
         )
         return {
-            name: attr for name, attr in attrs if
-            isinstance(attr, enum.EnumMeta) or
-            name.startswith(("get_", "set_"))
+            name: attr
+            for name, attr in attrs
+            if isinstance(attr, enum.EnumMeta) or name.startswith(("get_", "set_"))
         }
 
     @facade
@@ -182,16 +212,12 @@ class Client:
             "create": origin.Machines.create,
             "get": origin.Machine.read,
             "list": origin.Machines.read,
-            "get_power_parameters_for":
-                origin.Machines.get_power_parameters_for,
+            "get_power_parameters_for": origin.Machines.get_power_parameters_for,
         }
 
     @facade
     def rack_controllers(origin):
-        return {
-            "get": origin.RackController.read,
-            "list": origin.RackControllers.read,
-        }
+        return {"get": origin.RackController.read, "list": origin.RackControllers.read}
 
     @facade
     def region_controllers(origin):
@@ -226,9 +252,7 @@ class Client:
 
     @facade
     def version(origin):
-        return {
-            "get": origin.Version.read,
-        }
+        return {"get": origin.Version.read}
 
     @facade
     def zones(origin):
@@ -236,4 +260,12 @@ class Client:
             "create": origin.Zones.create,
             "get": origin.Zone.read,
             "list": origin.Zones.read,
+        }
+
+    @facade
+    def resource_pools(origin):
+        return {
+            "create": origin.ResourcePools.create,
+            "get": origin.ResourcePool.read,
+            "list": origin.ResourcePools.read,
         }

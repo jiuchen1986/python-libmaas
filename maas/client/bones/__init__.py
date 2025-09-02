@@ -4,23 +4,21 @@ These are low-level bindings that closely mirror the shape of MAAS's Web API,
 hence the name "bones".
 """
 
-__all__ = [
-    "CallError",
-    "SessionAPI",
-]
+__all__ = ["CallError", "SessionAPI"]
 
-from collections import (
-    Iterable,
-    namedtuple,
-)
+import typing
+
+from collections import namedtuple
+from collections.abc import Iterable
 import json
+from urllib.parse import urlparse
 
 import aiohttp
 
 from . import helpers
 from .. import utils
 from ..utils import profiles
-from ..utils.async import asynchronous
+from ..utils.maas_async import asynchronous
 
 
 class SessionError(Exception):
@@ -32,17 +30,16 @@ class SessionAPI:
 
     @classmethod
     @asynchronous
-    async def fromURL(
-            cls, url, *, credentials=None, insecure=False):
+    async def fromURL(cls, url, *, credentials=None, insecure=False):
         """Return a `SessionAPI` for a given MAAS instance."""
         try:
-            description = await helpers.fetch_api_description(
-                url, credentials=credentials, insecure=insecure)
+            description = await helpers.fetch_api_description(url, insecure=insecure)
         except helpers.RemoteError as error:
             # For now just re-raise as SessionError.
             raise SessionError(str(error))
         else:
-            session = cls(description, credentials)
+            session = cls(url, description, credentials)
+            session.scheme = urlparse(url).scheme
             session.insecure = insecure
             return session
 
@@ -52,7 +49,10 @@ class SessionAPI:
 
         :see: `ProfileStore`.
         """
-        return cls(profile.description, profile.credentials)
+        session = cls(profile.url, profile.description, profile.credentials)
+        session.scheme = urlparse(profile.url).scheme
+        session.insecure = profile.other.get("insecure", False)
+        return session
 
     @classmethod
     def fromProfileName(cls, name):
@@ -65,8 +65,7 @@ class SessionAPI:
 
     @classmethod
     @asynchronous
-    async def login(
-            cls, url, *, username=None, password=None, insecure=False):
+    async def login(cls, url, *, username=None, password=None, insecure=False):
         """Make a `SessionAPI` by logging-in with a username and password.
 
         :return: A tuple of ``profile`` and ``session``, where the former is
@@ -74,38 +73,42 @@ class SessionAPI:
             instance made using the profile.
         """
         profile = await helpers.login(
-            url=url, username=username, password=password, insecure=insecure)
-        session = cls(profile.description, profile.credentials)
+            url=url, username=username, password=password, insecure=insecure
+        )
+        session = cls(url, profile.description, profile.credentials)
+        session.scheme = urlparse(url).scheme
         session.insecure = insecure
         return profile, session
 
     @classmethod
     @asynchronous
-    async def connect(
-            cls, url, *, apikey=None, insecure=False):
+    async def connect(cls, url, *, apikey=None, insecure=False):
         """Make a `SessionAPI` by connecting with an apikey.
 
         :return: A tuple of ``profile`` and ``session``, where the former is
             an unsaved `Profile` instance, and the latter is a `SessionAPI`
             instance made using the profile.
         """
-        profile = await helpers.connect(
-            url=url, apikey=apikey, insecure=insecure)
-        session = cls(profile.description, profile.credentials)
+        profile = await helpers.connect(url=url, apikey=apikey, insecure=insecure)
+        session = cls(url, profile.description, profile.credentials)
+        session.scheme = urlparse(url).scheme
         session.insecure = insecure
         return profile, session
 
     # Set these on instances.
+    scheme = "http"
     insecure = False
     debug = False
 
-    def __init__(self, description, credentials=None):
+    def __init__(self, url, description, credentials=None):
         """Construct a `SessionAPI`.
 
+        :param url: MAAS URL
         :param description: The description of the remote API. See `fromURL`.
         :param credentials: Credentials for the remote system. Optional.
         """
         super(SessionAPI, self).__init__()
+        self.__url = url
         self.__description = description
         self.__credentials = credentials
         self.__populate()
@@ -115,15 +118,15 @@ class SessionAPI:
         if self.__credentials is None:
             for resource in resources:
                 if resource["anon"] is not None:
-                    handler = HandlerAPI(resource["anon"], resource, self)
+                    handler = HandlerAPI(self.__url, resource["anon"], resource, self)
                     setattr(self, handler.name, handler)
         else:
             for resource in resources:
                 if resource["auth"] is not None:
-                    handler = HandlerAPI(resource["auth"], resource, self)
+                    handler = HandlerAPI(self.__url, resource["auth"], resource, self)
                     setattr(self, handler.name, handler)
                 elif resource["anon"] is not None:
-                    handler = HandlerAPI(resource["anon"], resource, self)
+                    handler = HandlerAPI(self.__url, resource["anon"], resource, self)
                     setattr(self, handler.name, handler)
 
     @property
@@ -153,9 +156,10 @@ class HandlerAPI:
     operations.
     """
 
-    def __init__(self, handler, resource, session):
+    def __init__(self, url, handler, resource, session):
         """Construct a `HandlerAPI`.
 
+        :param url: MAAS URL
         :param handler: The handler description from the overall API
             description document. See `SessionAPI`.
         :param resource: The parent of `handler` in the API description
@@ -163,6 +167,7 @@ class HandlerAPI:
         :param session: The `SessionAPI`.
         """
         super(HandlerAPI, self).__init__()
+        self.__url = url
         self.__handler = handler
         self.__resource = resource
         self.__session = session
@@ -186,7 +191,8 @@ class HandlerAPI:
         This will typically contain replacement patterns; these are
         interpolated in `CallAPI`.
         """
-        return self.__handler["uri"]
+        url = urlparse(self.__url)
+        return f"{url.scheme}://{url.netloc}{self.__handler['path']}"
 
     @property
     def params(self):
@@ -209,7 +215,8 @@ class HandlerAPI:
     @property
     def actions(self):
         return [
-            (name, value) for name, value in vars(self).items()
+            (name, value)
+            for name, value in vars(self).items()
             if not name.startswith("_") and isinstance(value, ActionAPI)
         ]
 
@@ -296,34 +303,44 @@ class ActionAPI:
         """
         data = dict(data)
         params = {name: data.pop(name) for name in self.handler.params}
-        for key, value in data.items():
-            if key.startswith('_'):
+        for key, value in data.copy().items():
+            if isinstance(value, typing.Mapping):
+                del data[key]
+                for nested_key, nested_value in value.items():
+                    data[key + "_" + nested_key] = nested_value
+        for key, value in data.copy().items():
+            if key.startswith("_"):
                 data[key[1:]] = data.pop(key)
         response = await self.bind(**params).call(**data)
         return response.data
 
     def __repr__(self):
         if self.op is None:
-            return "<Action %s %s %s>" % (
-                self.fullname, self.method, self.handler.uri)
+            return "<Action %s %s %s>" % (self.fullname, self.method, self.handler.uri)
         else:
             return "<Action %s %s %s op=%s>" % (
-                self.fullname, self.method, self.handler.uri, self.op)
+                self.fullname,
+                self.method,
+                self.handler.uri,
+                self.op,
+            )
 
 
 CallResult = namedtuple("CallResult", ("response", "content", "data"))
 
 
 class CallError(Exception):
-
     def __init__(self, request, response, content, call):
         desc_for_request = "%(method)s %(uri)s" % request
         desc_for_response = "HTTP %s %s" % (response.status, response.reason)
         desc_for_content = content.decode("utf-8", "replace")
         desc = "%s -> %s (%s)" % (
-            desc_for_request, desc_for_response,
-            desc_for_content if len(desc_for_content) <= 50 else (
-                desc_for_content[:49] + "…"))
+            desc_for_request,
+            desc_for_response,
+            desc_for_content
+            if len(desc_for_content) <= 50
+            else (desc_for_content[:49] + "…"),
+        )
         super(CallError, self).__init__(desc)
         self.request = request
         self.response = response
@@ -336,7 +353,6 @@ class CallError(Exception):
 
 
 class CallAPI:
-
     def __init__(self, params, action):
         """Create a new `CallAPI`.
 
@@ -356,9 +372,10 @@ class CallAPI:
                 raise TypeError("%s takes no arguments" % self.action.fullname)
             else:
                 params_expected_desc = ", ".join(sorted(params_expected))
-                raise TypeError("%s takes %d arguments: %s" % (
-                    self.action.fullname, len(params_expected),
-                    params_expected_desc))
+                raise TypeError(
+                    "%s takes %d arguments: %s"
+                    % (self.action.fullname, len(params_expected), params_expected_desc)
+                )
 
     @property
     def action(self):
@@ -371,7 +388,10 @@ class CallAPI:
         # TODO: this is el-cheapo URI Template
         # <http://tools.ietf.org/html/rfc6570> support; use uritemplate-py
         # <https://github.com/uri-templates/uritemplate-py> here?
-        return self.action.handler.uri.format(**self.__params)
+        uri = urlparse(self.action.handler.uri)
+        if uri.scheme != self.action.handler.session.scheme:
+            uri = uri._replace(scheme=self.action.handler.session.scheme)
+        return uri.geturl().format(**self.__params)
 
     def rebind(self, **params):
         """Rebind the parameters into the URI.
@@ -399,9 +419,10 @@ class CallAPI:
         :param data: Data to pass in the *body* of the request.
         :type data: dict
         """
+
         def expand(data):
             for name, value in data.items():
-                if isinstance(value, Iterable):
+                if isinstance(value, Iterable) and not isinstance(value, str):
                     for value in value:
                         yield name, value
                 else:
@@ -417,7 +438,8 @@ class CallAPI:
 
         # Bundle things up ready to throw over the wire.
         uri, body, headers = utils.prepare_payload(
-            self.action.op, self.action.method, self.uri, data)
+            self.action.op, self.action.method, self.uri, data
+        )
 
         # Headers are returned as a list, but they must be a dict for
         # the signing machinery.
@@ -442,8 +464,8 @@ class CallAPI:
         session = aiohttp.ClientSession(connector=connector)
         async with session:
             response = await session.request(
-                self.action.method, uri, data=body,
-                headers=_prefer_json(headers))
+                self.action.method, uri, data=body, headers=_prefer_json(headers)
+            )
             async with response:
                 # Fetch the raw body content.
                 content = await response.read()
@@ -465,14 +487,14 @@ class CallAPI:
                 # Decode from JSON if that's what it's declared as.
                 if response.content_type is None:
                     data = await response.read()
-                elif response.content_type.endswith('/json'):
+                elif response.content_type.endswith("/json"):
                     data = await response.json()
                 else:
                     data = await response.read()
 
                 if response.content_type is None:
                     data = content
-                elif response.content_type.endswith('/json'):
+                elif response.content_type.endswith("/json"):
                     # JSON should always be UTF-8.
                     data = json.loads(content.decode("utf-8"))
                 else:

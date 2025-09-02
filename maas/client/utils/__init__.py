@@ -26,38 +26,21 @@ __all__ = [
     "vars_class",
 ]
 
-from collections import (
-    Iterable,
-    namedtuple,
-)
-from functools import (
-    lru_cache,
-    partial,
-)
-from inspect import (
-    cleandoc,
-    getdoc,
-)
-from itertools import (
-    chain,
-    cycle,
-    repeat,
-)
+
+from collections import namedtuple
+from collections.abc import Iterable
+from functools import lru_cache, partial
+from inspect import cleandoc, getdoc
+from itertools import chain, cycle, repeat
 import re
 import sys
 import threading
 from time import time
-from urllib.parse import (
-    quote_plus,
-    urlparse,
-)
+from urllib.parse import quote_plus, urlparse
 
 from oauthlib import oauth1
 
-from .multipart import (
-    build_multipart_message,
-    encode_multipart_message,
-)
+from .multipart import build_multipart_message, encode_multipart_message
 
 
 def urlencode(data):
@@ -69,14 +52,13 @@ def urlencode(data):
     Unicode strings will be encoded to UTF-8. This is what Django expects; see
     `smart_text` in the Django documentation.
     """
+
     def dec(string):
         if isinstance(string, bytes):
             string = string.decode("utf-8")
         return quote_plus(string)
 
-    return "&".join(
-        "%s=%s" % (dec(name), dec(value))
-        for name, value in data)
+    return "&".join("%s=%s" % (dec(name), dec(value)) for name, value in data)
 
 
 def prepare_payload(op, method, uri, data):
@@ -103,8 +85,8 @@ def prepare_payload(op, method, uri, data):
     if method == "GET":
         headers, body = [], None
         query.extend(
-            (name, slurp(value) if callable(value) else value)
-            for name, value in data)
+            (name, slurp(value) if callable(value) else value) for name, value in data
+        )
     else:
         # Even if data is empty, construct a multipart request body. Piston
         # (server-side) sets `request.data` to `None` if there's no payload.
@@ -119,8 +101,8 @@ class OAuthSigner:
     """Helper class to OAuth-sign an HTTP request."""
 
     def __init__(
-            self, token_key, token_secret, consumer_key, consumer_secret,
-            realm="OAuth"):
+        self, token_key, token_secret, consumer_key, consumer_secret, realm="OAuth"
+    ):
         """Initialize a ``OAuthAuthorizer``.
 
         :type token_key: Unicode string.
@@ -130,6 +112,7 @@ class OAuthSigner:
 
         :param realm: Optional.
         """
+
         def _to_unicode(string):
             if isinstance(string, bytes):
                 return string.decode("ascii")
@@ -152,9 +135,13 @@ class OAuthSigner:
         # The use of PLAINTEXT here was copied from MAAS, but we should switch
         # to HMAC once it works server-side.
         client = oauth1.Client(
-            self.consumer_key, self.consumer_secret, self.token_key,
-            self.token_secret, signature_method=oauth1.SIGNATURE_PLAINTEXT,
-            realm=self.realm)
+            self.consumer_key,
+            self.consumer_secret,
+            self.token_key,
+            self.token_secret,
+            signature_method=oauth1.SIGNATURE_PLAINTEXT,
+            realm=self.realm,
+        )
         # To preserve API backward compatibility convert an empty string body
         # to `None`. The old "oauth" library would treat the empty string as
         # "no body", but "oauthlib" requires `None`.
@@ -175,13 +162,13 @@ def sign(uri, headers, credentials):
     auth.sign_request(uri, method="GET", body=None, headers=headers)
 
 
-re_paragraph_splitter = re.compile(
-    r"(?:\r\n){2,}|\r{2,}|\n{2,}", re.MULTILINE)
+re_paragraph_splitter = re.compile(r"(?:\r\n){2,}|\r{2,}|\n{2,}", re.MULTILINE)
 
 paragraph_split = re_paragraph_splitter.split
 docstring_split = partial(paragraph_split, maxsplit=1)
 remove_line_breaks = lambda string: (
-    " ".join(line.strip() for line in string.splitlines()))
+    " ".join(line.strip() for line in string.splitlines())
+)
 
 newline = "\n"
 empty = ""
@@ -248,8 +235,7 @@ def vars_class(cls):
     This differs from the usual behaviour of `vars` which returns attributes
     belonging to the given class and not its ancestors.
     """
-    return dict(chain.from_iterable(
-        vars(cls).items() for cls in reversed(cls.__mro__)))
+    return dict(chain.from_iterable(vars(cls).items() for cls in reversed(cls.__mro__)))
 
 
 def retries(timeout=30, intervals=1, time=time):
@@ -324,11 +310,7 @@ def coalesce(*values, default=None):
 
 def remove_None(params: dict):
     """Remove all keys in `params` that have the value of `None`."""
-    return {
-        key: value
-        for key, value in params.items()
-        if value is not None
-    }
+    return {key: value for key, value in params.items() if value is not None}
 
 
 class SpinnerContext:
@@ -346,7 +328,7 @@ class SpinnerContext:
         the line printed doesn't overwrite an already existing spinner line.
         """
         clear_len = max(len(self._prev_msg), len(self.msg)) + 4
-        self.spinner.stream.write("%s\r" % (' ' * clear_len))
+        self.spinner.stream.write("%s\r" % (" " * clear_len))
         print(*args, file=self.spinner.stream, flush=True, **kwargs)
 
 
@@ -356,7 +338,7 @@ class Spinner:
     Use as a context manager.
     """
 
-    def __init__(self, frames='/-\|', stream=sys.stdout):
+    def __init__(self, frames=r"/-\|", stream=sys.stdout):
         super(Spinner, self).__init__()
         self.frames = frames
         self.stream = stream
@@ -376,21 +358,21 @@ class Spinner:
                     # Write out successive frames (and a backspace) every 0.1
                     # seconds until done is set.
                     while not done.wait(0.1):
-                        diff = (
-                            len(self.__context._prev_msg) -
-                            len(self.__context.msg))
+                        diff = len(self.__context._prev_msg) - len(self.__context.msg)
                         if diff < 0:
                             diff = 0
-                        stream.write("[%s] %s%s\r" % (
-                            next(frames), self.__context.msg, ' ' * diff))
+                        stream.write(
+                            "[%s] %s%s\r"
+                            % (next(frames), self.__context.msg, " " * diff)
+                        )
                         self.__context._prev_msg = self.__context.msg
                         stream.flush()
                 finally:
                     # Clear line and enable cursor.
-                    clear_len = max(
-                        len(self.__context._prev_msg),
-                        len(self.__context.msg)) + 4
-                    stream.write("%s\r" % (' ' * clear_len))
+                    clear_len = (
+                        max(len(self.__context._prev_msg), len(self.__context.msg)) + 4
+                    )
+                    stream.write("%s\r" % (" " * clear_len))
                     stream.write("\033[?25h")
                     stream.flush()
 

@@ -94,6 +94,19 @@ Delete a machine is simple as calling delete on the machine object.
 >>> machine.delete()
 ```
 
+## Assigning tags
+
+Assigning tags to a machine is as simple as calling `add` or `remove` on
+`tags` attribute.
+
+```pycon
+>>> new_tag = client.tags.create('new')
+>>> machine.tags.add(new_tag)
+>>> machine.tags
+<Tags.Managed#Machine length=1 items=[<Tag name='new' (unloaded)>]>
+>>> machine.tags.remove(new_tag)
+```
+
 ## Commissioning and testing
 
 Easily commission a machine and wait until it successfully completes. By
@@ -109,7 +122,7 @@ A more advanced asyncio based script that runs commissioning with extra scripts
 and waits until all machines have successfully commissioned.
 
 ```python
-#!/usr/bin/env python3.5
+#!/usr/bin/env python3
 
 import asyncio
 

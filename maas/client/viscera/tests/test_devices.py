@@ -1,12 +1,9 @@
 """Test for `maas.client.viscera.devices`."""
 
-from testtools.matchers import Equals
+from testtools.matchers import Equals, IsInstance
 
 from .. import devices
-from ...testing import (
-    make_name_without_spaces,
-    TestCase,
-)
+from ...testing import make_name_without_spaces, TestCase
 from ..testing import bind
 
 
@@ -17,15 +14,19 @@ def make_origin():
 
 
 class TestDevice(TestCase):
-
     def test__string_representation_includes_only_system_id_and_hostname(self):
-        device = devices.Device({
-            "system_id": make_name_without_spaces("system-id"),
-            "hostname": make_name_without_spaces("hostname"),
-        })
-        self.assertThat(repr(device), Equals(
-            "<Device hostname=%(hostname)r system_id=%(system_id)r>"
-            % device._data))
+        device = devices.Device(
+            {
+                "system_id": make_name_without_spaces("system-id"),
+                "hostname": make_name_without_spaces("hostname"),
+            }
+        )
+        self.assertThat(
+            repr(device),
+            Equals(
+                "<Device hostname=%(hostname)r system_id=%(system_id)r>" % device._data
+            ),
+        )
 
     def test__read(self):
         data = {
@@ -40,8 +41,69 @@ class TestDevice(TestCase):
         device_expected = origin.Device(data)
         self.assertThat(device_observed, Equals(device_expected))
 
+    def test__get_power_parameters(self):
+        device = make_origin().Device(
+            {
+                "system_id": make_name_without_spaces("system-id"),
+                "hostname": make_name_without_spaces("hostname"),
+            }
+        )
+        power_parameters = {"key": make_name_without_spaces("value")}
+        device._handler.power_parameters.return_value = power_parameters
+        self.assertThat(device.get_power_parameters(), Equals(power_parameters))
+        device._handler.power_parameters.assert_called_once_with(
+            system_id=device.system_id
+        )
+
+    def test__set_power(self):
+        orig_power_type = make_name_without_spaces("power_type")
+        new_power_type = make_name_without_spaces("power_type")
+        device = make_origin().Device(
+            {
+                "system_id": make_name_without_spaces("system-id"),
+                "hostname": make_name_without_spaces("hostname"),
+                "power_type": orig_power_type,
+            }
+        )
+        power_parameters = {"key": make_name_without_spaces("value")}
+        device._handler.update.return_value = {"power_type": new_power_type}
+        device.set_power(new_power_type, power_parameters)
+        device._handler.update.assert_called_once_with(
+            system_id=device.system_id,
+            power_type=new_power_type,
+            power_parameters=power_parameters,
+        )
+        self.assertThat(device.power_type, Equals(new_power_type))
+
 
 class TestDevices(TestCase):
+    def test__create(self):
+        origin = make_origin()
+        Devices = origin.Devices
+        Devices._handler.create.return_value = {}
+        observed = Devices.create(
+            ["00:11:22:33:44:55", "00:11:22:33:44:AA"],
+            hostname="new-machine",
+            domain="maas",
+            zone="zone1",
+        )
+        self.assertThat(observed, IsInstance(devices.Device))
+        Devices._handler.create.assert_called_once_with(
+            mac_addresses=["00:11:22:33:44:55", "00:11:22:33:44:AA"],
+            hostname="new-machine",
+            domain="maas",
+            zone="zone1",
+        )
+
+    def test__create_no_optional(self):
+        origin = make_origin()
+        Devices = origin.Devices
+        Devices._handler.create.return_value = {}
+        observed = Devices.create(["00:11:22:33:44:55", "00:11:22:33:44:AA"])
+        self.assertThat(observed, IsInstance(devices.Device))
+        Devices._handler.create.assert_called_once_with(
+            mac_addresses=["00:11:22:33:44:55", "00:11:22:33:44:AA"]
+        )
 
     def test__read(self):
         data = {

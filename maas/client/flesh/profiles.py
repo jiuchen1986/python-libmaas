@@ -1,8 +1,6 @@
 """Commands for working with local profiles."""
 
-__all__ = [
-    "register",
-]
+__all__ = ["register"]
 
 import sys
 
@@ -16,16 +14,10 @@ from . import (
     TableCommand,
     tables,
 )
-from .. import (
-    bones,
-    utils,
-)
+from .. import bones, utils
 from ..bones import helpers
-from ..utils import (
-    auth,
-    profiles,
-)
-from ..utils.async import asynchronous
+from ..utils import auth, profiles
+from ..utils.maas_async import asynchronous
 
 
 class cmd_login(Command):
@@ -39,63 +31,121 @@ class cmd_login(Command):
     def __init__(self, parser):
         super(cmd_login, self).__init__(parser)
         parser.add_argument(
-            "-p", "--profile-name", default=None, help=(
+            "-p",
+            "--profile-name",
+            default=None,
+            help=(
                 "The name to give the profile. Default is the username used "
-                "to login."))
+                "to login."
+            ),
+        )
         parser.add_argument(
-            '--apikey', default=None, help=(
+            "--anonymous",
+            default=False,
+            action="store_true",
+            help=(
+                "Create an anonymous profile, no credentials are associated " "to it."
+            ),
+        )
+        parser.add_argument(
+            "--apikey",
+            default=None,
+            help=(
                 "The API key acquired from MAAS. This requires the profile "
-                "name to be provided as well."))
+                "name to be provided as well."
+            ),
+        )
         parser.add_argument(
-            '-k', '--insecure', action='store_true', help=(
-                "Disable SSL certificate check"), default=False)
+            "-k",
+            "--insecure",
+            action="store_true",
+            help=("Disable SSL certificate check"),
+            default=False,
+        )
         parser.add_argument(
-            "url", nargs="?", type=utils.api_url, help=(
+            "url",
+            nargs="?",
+            type=utils.api_url,
+            help=(
                 "The URL of the API, e.g. http://example.com/MAAS/ "
                 "or http://example.com/MAAS/api/2.0/ if you wish to specify "
                 "the API version. If no URL is provided then it will be "
-                "prompted for, interactively."))
+                "prompted for, interactively."
+            ),
+        )
         parser.add_argument(
-            "username", nargs="?", default=None, help=(
+            "username",
+            nargs="?",
+            default=None,
+            help=(
                 "The username used to login to MAAS. If no username is "
                 "provided and API key is not being used it will be prompted "
-                "for, interactively."))
+                "for, interactively."
+            ),
+        )
         parser.add_argument(
-            "password", nargs="?", default=None, help=(
+            "password",
+            nargs="?",
+            default=None,
+            help=(
                 "The password used to login to MAAS. If no password is "
                 "proviced and API key is not being used it will be promoed "
-                "for, interactively."))
+                "for, interactively."
+            ),
+        )
 
     @asynchronous
     async def __call__(self, options):
-        if options.apikey and not options.profile_name:
+        has_auth_info = any((options.apikey, options.username, options.password))
+        if options.anonymous and has_auth_info:
             raise ValueError(
-                "-p,--profile-name must be provided with --apikey")
+                "Can't specify username, password or--apikey with --anonymous"
+            )
+
+        if options.apikey and not options.profile_name:
+            raise ValueError("-p,--profile-name must be provided with --apikey")
+
         if not options.url:
             url = read_input("URL", validator=utils.api_url)
         else:
             url = options.url
+
         if not options.apikey:
-            if not options.username:
-                username = read_input("Username")
-            else:
-                username = options.username
-            if not options.password:
+            if options.anonymous:
+                password = None
+            elif options.username and not options.password:
                 password = read_input("Password", password=True)
             else:
                 password = options.password
-                if password == '-':
+                if password == "-":
                     password = sys.stdin.readline().strip()
-            profile = await helpers.login(
-                url, username=username, password=password,
-                insecure=options.insecure)
+            try:
+                profile = await helpers.login(
+                    url,
+                    anonymous=options.anonymous,
+                    username=options.username,
+                    password=password,
+                    insecure=options.insecure,
+                )
+            except helpers.MacaroonLoginNotSupported:
+                # the server doesn't have external authentication enabled,
+                # propmt for username/password
+                username = read_input("Username")
+                password = read_input("Password", password=True)
+                profile = await helpers.login(
+                    url, username=username, password=password, insecure=options.insecure
+                )
         else:
             credentials = auth.obtain_credentials(options.apikey)
             session = await bones.SessionAPI.fromURL(
-                url, credentials=credentials, insecure=options.insecure)
+                url, credentials=credentials, insecure=options.insecure
+            )
             profile = profiles.Profile(
-                options.profile_name, url, credentials=credentials,
-                description=session.description)
+                options.profile_name,
+                url,
+                credentials=credentials,
+                description=session.description,
+            )
 
         if options.profile_name:
             profile = profile.replace(name=options.profile_name)
@@ -116,7 +166,7 @@ class cmd_login(Command):
             "with the profile name {{autoblue}}{profile.name}{{/autoblue}}.",
             "For help with the available commands, try:",
             "  maas help",
-            ]
+        ]
         for message in what_next:
             message = message.format(profile=profile)
             print(colorized(message))
@@ -133,10 +183,13 @@ class cmd_logout(Command):
     def __init__(self, parser):
         super(cmd_logout, self).__init__(parser)
         parser.add_argument(
-            "profile_name", metavar="profile-name",
-            nargs="?", choices=PROFILE_NAMES, help=(
-                "The profile name you want to logout of." +
-                ("" if PROFILE_DEFAULT is None else " [default: %(default)s]")
+            "profile_name",
+            metavar="profile-name",
+            nargs="?",
+            choices=PROFILE_NAMES,
+            help=(
+                "The profile name you want to logout of."
+                + ("" if PROFILE_DEFAULT is None else " [default: %(default)s]")
             ),
         )
         if PROFILE_DEFAULT is not None:
@@ -157,10 +210,10 @@ class cmd_switch(Command):
     def __init__(self, parser):
         super(cmd_switch, self).__init__(parser)
         parser.add_argument(
-            "profile_name", metavar="profile-name", choices=PROFILE_NAMES,
-            help=(
-                "The profile name you want to switch to."
-            ),
+            "profile_name",
+            metavar="profile-name",
+            choices=PROFILE_NAMES,
+            help=("The profile name you want to switch to."),
         )
 
     def __call__(self, options):
@@ -175,16 +228,20 @@ class cmd_profiles(TableCommand):
     def __init__(self, parser):
         super(cmd_profiles, self).__init__(parser)
         parser.add_argument(
-            "--refresh", action='store_true', default=False, help=(
+            "--refresh",
+            action="store_true",
+            default=False,
+            help=(
                 "Retrieves the latest version of the help information for "
                 "all profiles. Use it to update your command-line client's "
-                "information after an upgrade to the MAAS server."),
+                "information after an upgrade to the MAAS server."
+            ),
         )
         parser.other.add_argument(
-            "--no-pager", action='store_true',
-            help=(
-                "Don't use the pager when printing the output of the "
-                "command."))
+            "--no-pager",
+            action="store_true",
+            help=("Don't use the pager when printing the output of the " "command."),
+        )
 
     def __call__(self, options):
         if options.refresh:

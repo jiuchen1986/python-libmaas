@@ -27,7 +27,7 @@ until we release a beta all APIs could change.
 Either work from a branch:
 
 ```console
-$ git clone https://github.com/maas/python-libmaas.git
+$ git clone https://github.com/canonical/python-libmaas.git
 $ cd python-libmaas
 $ make
 ```
@@ -36,14 +36,14 @@ Or install with [pip](https://pip.pypa.io/) into a
 [virtualenv](https://virtualenv.readthedocs.org/):
 
 ```console
-$ virtualenv --python=python3.5 amc && source amc/bin/activate
-$ pip install git+https://github.com/maas/python-libmaas.git
+$ virtualenv --python=python3 amc && source amc/bin/activate
+$ pip install git+https://github.com/canonical/python-libmaas.git
 ```
 
 Or install from [PyPI](https://pypi.python.org/):
 
 ```console
-$ virtualenv --python=python3.5 amc && source amc/bin/activate
+$ virtualenv --python=python3 amc && source amc/bin/activate
 $ pip install python-libmaas
 ```
 
@@ -226,23 +226,6 @@ $ bin/pip install -UI IPython
 
 Pull requests are welcome but authors need to sign the [Canonical
 contributor license agreement][CCLA] before those PRs can be merged.
-
-
-### _bones_ & _viscera_
-
-Digging around in the code and when using the primary client API, you
-may find references to _bones_ and _viscera_. These libraries form the
-base for the client API:
-
-* [_bones_](bones/index.md) is a lower-level library that closely
-  mirrors MAAS's Web API. Every MAAS server publishes a description of
-  its Web API and _bones_ generates a convenient mechanism to interact
-  with it.
-
-* [_viscera_](viscera/index.md) is a higher-level library which makes
-  heavy use of _bones_. MAAS's Web API is sometimes unfriendly or
-  inconsistent, but _viscera_ presents a hand-crafted API that has been
-  designed for developers rather than machines.
 
 
 [asyncio]: https://docs.python.org/3/library/asyncio.html

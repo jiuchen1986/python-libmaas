@@ -1,8 +1,8 @@
-#!/usr/bin/env python3.5
+#!/usr/bin/env python3
 
 import argparse
 import ast
-from collections import Iterable
+from collections.abc import Iterable
 from glob import iglob
 from itertools import (
     chain,
@@ -96,7 +96,6 @@ python_standard_libs = [
     'difflib',
     'dircache',
     'dis',
-    'distutils',
     'dl',
     'doctest',
     'DocXMLRPCServer',
@@ -203,6 +202,7 @@ python_standard_libs = [
     'optparse',
     'os',
     'ossaudiodev',
+    'packaging',
     'parser',
     'pathlib',
     'pdb',
@@ -385,8 +385,9 @@ class Pattern:
 
     def compile(self):
         self._matcher = re.compile(
-            r"(%s)\Z(?ms)" % "|".join(chain.from_iterable(
-                map(self._compile_pattern, self.patterns))))
+            r"(%s)\Z" % "|".join(chain.from_iterable(
+                map(self._compile_pattern, self.patterns))),
+            re.MULTILINE | re.DOTALL)
 
     def match(self, name):
         return self._matcher.match(name) is not None
@@ -514,6 +515,7 @@ checks = [
             Allow("aiohttp|aiohttp.**"),
             Allow("django|django.**"),
             Allow("fixtures|fixtures.**"),
+            Allow("macaroonbakery|macaroonbakery.**"),
             Allow("maas.client|maas.client.**"),
             Allow("multidict|multidict.**"),
             Allow("pkg_resources|pkg_resources.**"),
@@ -551,6 +553,7 @@ checks = [
         Rule(
             Allow("aiohttp|aiohttp.**"),
             Allow("maas.client|maas.client.**"),
+            Allow("macaroonbakery|macaroonbakery.**"),
             Allow("oauthlib.oauth1"),
             Allow("pytz"),
             Allow("bson"),
@@ -562,6 +565,7 @@ checks = [
     (
         Setup,
         Rule(
+            Allow("os.path|os.path.**"),
             Allow("setuptools|setuptools.**"),
         ),
     ),

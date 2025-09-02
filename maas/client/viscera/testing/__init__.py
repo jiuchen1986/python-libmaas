@@ -1,10 +1,9 @@
 """ Testing framework for maas.client.viscera """
 
-__all__ = [
-    'bind',
-]
+__all__ = ["bind"]
 
-from collections import Mapping
+
+from collections.abc import Mapping
 from itertools import chain
 from unittest.mock import Mock
 
@@ -29,6 +28,7 @@ def bind(*objects, session=None):
     :param session: A `bones.SessionAPI` instance.
     :return: An `OriginBase` instance.
     """
+
     def _flatten_to_items(thing):
         if isinstance(thing, Mapping):
             yield from thing.items()
@@ -42,8 +42,7 @@ def bind(*objects, session=None):
     if session is None:
         session = Mock(name="session")
         session.handlers = {
-            name: AsyncCallableMock(name="handler(%s)" % name)
-            for name in objects
+            name: AsyncCallableMock(name="handler(%s)" % name) for name in objects
         }
 
     return OriginBase(session, objects=objects)
